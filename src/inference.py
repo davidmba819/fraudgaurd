@@ -657,3 +657,11 @@ def run_inference(
         "batches_processed": batches_processed,
         "elapsed_seconds": elapsed_time
     }
+
+if __name__ == "__main__":
+
+    run_inference(
+        max_transactions=1000,
+        batch_size=100,
+        max_runtime_seconds=300
+    )

@@ -361,3 +361,11 @@ def run_simulator(
         "elapsed_seconds": elapsed_time,
         "last_source_record_id": last_source_id
     }
+
+if __name__ == "__main__":
+
+    run_simulator(
+        max_transactions=1000,
+        batch_size=100,
+        max_runtime_seconds=300
+    )

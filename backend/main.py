@@ -3,6 +3,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi import FastAPI, HTTPException, Query
 from src.database.database import get_database_connection
 from backend.schemas import AnalystDecisionCreate
+from backend.explain import generate_gemini_explanation
 
 # Initialize FastAPI application
 app = FastAPI(
@@ -372,6 +373,131 @@ def investigate_alert(prediction_id: int):
 
         if connection:
             connection.close()
+
+
+
+
+@app.post("/alerts/{prediction_id}/explanation")
+def generate_alert_explanation(prediction_id: int):
+
+    connection = None
+    cursor = None
+
+    try:
+        connection = get_database_connection()
+
+        if connection is None:
+            raise ConnectionError("Database connection failed.")
+
+        cursor = connection.cursor(dictionary=True)
+
+        # 1. Retrieve the prediction and saved SHAP evidence
+        query = """
+            SELECT
+                prediction_id,
+                fraud_probability,
+                decision_threshold_used,
+                predicted_class,
+                top_features,
+                shap_values,
+                explanation
+
+            FROM prediction_results
+
+            WHERE prediction_id = %s
+        """
+
+        cursor.execute(query, (prediction_id,))
+        result = cursor.fetchone()
+
+        if result is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Prediction not found."
+            )
+
+        # 2. Only generate explanations for fraud alerts
+        if result["predicted_class"] != 1:
+            raise HTTPException(
+                status_code=400,
+                detail="AI explanations are only available for fraud predictions."
+            )
+
+        # 3. Return an existing explanation without another API call
+        if result["explanation"]:
+            return {
+                "status": "success",
+                "source": "cached",
+                "prediction_id": prediction_id,
+                "explanation": result["explanation"]
+            }
+
+        # 4. Generate explanation using saved SHAP evidence
+        try:
+            explanation = generate_gemini_explanation(
+                fraud_probability=float(result["fraud_probability"]),
+                decision_threshold=float(result["decision_threshold_used"]),
+                predicted_class=result["predicted_class"],
+                shap_data=result["shap_values"],
+                top_features=result["top_features"]
+            )
+
+        except ValueError as e:
+            raise HTTPException(
+                status_code=422,
+                detail=str(e)
+            )
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"AI explanation service unavailable: {str(e)}"
+            )
+
+        # 5. Save the explanation in MySQL
+        update_query = """
+            UPDATE prediction_results
+
+            SET explanation = %s
+
+            WHERE prediction_id = %s
+        """
+
+        cursor.execute(
+            update_query,
+            (explanation, prediction_id)
+        )
+
+        connection.commit()
+
+        # 6. Return the generated explanation
+        return {
+            "status": "success",
+            "source": "generated",
+            "prediction_id": prediction_id,
+            "explanation": explanation
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+
+        if connection:
+            connection.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate AI explanation: {str(e)}"
+        )
+
+    finally:
+        if cursor:
+            cursor.close()
+
+        if connection:
+            connection.close()
+
 
 
 

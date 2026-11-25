@@ -257,4 +257,4 @@ catboost_info/
 
 # Operating system files
 .DS_Store
-Thumbs.db
+Thumbs.db.env

@@ -1987,8 +1987,9 @@ elif selected_page == "Investigation":
                     "SHAP contribution data is not available for this prediction."
                 )
 
+            
             # --------------------------------------
-            # AI EXPLANATION PLACEHOLDER
+            # AI-GENERATED ANALYST EXPLANATION
             # --------------------------------------
 
             explanation = (
@@ -2002,12 +2003,101 @@ elif selected_page == "Investigation":
 
                 st.markdown(explanation)
 
-            else:
+                st.caption(
+                    "This explanation is stored with the prediction "
+                    "and can be retrieved without another AI API call."
+                )
+
+            elif normalized_features:
 
                 st.caption(
-                    "An AI-generated narrative is not available yet. "
-                    "The SHAP evidence above is the current explanation source."
+                    "Generate a plain-language explanation from the "
+                    "saved SHAP evidence for this fraud prediction."
                 )
+
+                if st.button(
+                    "Generate AI Explanation",
+                    type="primary",
+                    key=f"generate_explanation_{prediction_id}"
+                ):
+
+                    try:
+
+                        with st.spinner(
+                            "Generating explanation from SHAP evidence..."
+                        ):
+
+                            explanation_response = requests.post(
+                                f"{API_BASE_URL}/alerts/{prediction_id}/explanation",
+                                timeout=60
+                            )
+
+                            explanation_response.raise_for_status()
+
+                            explanation_data = explanation_response.json()
+
+                            generated_explanation = explanation_data.get(
+                                "explanation"
+                            )
+
+                            if not generated_explanation:
+
+                                st.error(
+                                    "The explanation service returned no explanation."
+                                )
+
+                            else:
+
+                                # Update the current investigation data
+                                prediction["explanation"] = generated_explanation
+
+                                st.success(
+                                    "AI explanation generated successfully."
+                                )
+
+                                st.markdown(generated_explanation)
+
+                                source = explanation_data.get("source")
+
+                                if source == "cached":
+
+                                    st.caption(
+                                        "Retrieved from the existing database record."
+                                    )
+
+                                else:
+
+                                    st.caption(
+                                        "Generated using Gemini and saved to MySQL."
+                                    )
+
+                    except requests.HTTPError as error:
+
+                        try:
+                            error_detail = error.response.json().get(
+                                "detail",
+                                str(error)
+                            )
+                        except ValueError:
+                            error_detail = str(error)
+
+                        st.error(
+                            f"Unable to generate explanation: {error_detail}"
+                        )
+
+                    except requests.RequestException as error:
+
+                        st.error(
+                            f"Could not connect to the explanation service: {error}"
+                        )
+
+            else:
+
+                st.info(
+                    "AI explanation cannot be generated because SHAP "
+                    "contribution data is unavailable for this prediction."
+                )
+
 
             # --------------------------------------
             # ANALYST REVIEW
